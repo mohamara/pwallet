@@ -1,0 +1,15 @@
+# اگر Caddy اصلی شما داخل Docker است، از این override استفاده کنید.
+# docker compose -f docker-compose.yml -f deploy/docker-compose.caddy-network.yml up -d --build
+#
+# پیش‌نیاز: شبکه external با نام caddy (یا CADDY_NETWORK را عوض کنید)
+
+services:
+  pwallet:
+    ports: []
+    networks:
+      - caddy
+
+networks:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:-caddy}

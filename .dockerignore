@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.gitignore
+*.md
+.env
+.env.*
+.cursor
+terminals
+Dockerfile
+docker-compose*.yml
+deploy/caddy/install.sh

@@ -1,0 +1,18 @@
+# PWallet — فقط اپلیکیشن؛ بدون Caddy (برای جلوگیری از تداخل با Caddy سرور)
+# اپ روی localhost:3080 بالا می‌آید؛ Caddy اصلی سرور reverse_proxy می‌زند.
+
+services:
+  pwallet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pwallet
+    restart: unless-stopped
+    ports:
+      # فقط روی localhost — پورت 80/443 اشغال نمی‌شود
+      - "127.0.0.1:3080:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
