@@ -50,24 +50,53 @@ sudo systemctl reload caddy
 
 رکورد `A` یا `CNAME` برای `pwall.dfmstock.com` به IP سرور.
 
-## 4. اگر Caddy خودش داخل Docker است
+## 4. Caddy داخل Docker است (مثل `accounter_caddy`)
 
-از override شبکه مشترک استفاده کنید (بدون publish پورت روی host):
+شبکه `caddy` به‌صورت پیش‌فرض **وجود ندارد**. نام واقعی شبکه را از container بگیرید.
+
+### روش A — ساده (بدون شبکه مشترک) ✅ پیشنهادی
 
 ```bash
-docker compose -f docker-compose.yml -f deploy/docker-compose.caddy-network.yml up -d --build
+docker compose up -d --build
 ```
 
-snippet مخصوص Docker:
+در Caddyfile پروژه accounter:
+
+```caddyfile
+import /path/to/pwallet/deploy/caddy/pwall.dfmstock.com.docker-host.caddy
+```
+
+در `docker-compose` مربوط به **accounter_caddy** حتماً:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+سپس Caddy را reload کنید.
+
+### روش B — شبکه مشترک Docker
 
 ```bash
-# deploy/caddy/pwall.dfmstock.com.docker.caddy
+bash deploy/up-with-caddy.sh
+# یا: CADDY_CONTAINER=accounter_caddy bash deploy/up-with-caddy.sh
+```
+
+اسکریپت شبکه `accounter_caddy` را پیدا می‌کند (معمولاً `accounter_default`).
+
+در Caddyfile accounter:
+
+```caddyfile
 import /path/to/pwallet/deploy/caddy/pwall.dfmstock.com.docker.caddy
 ```
 
-در snippet: `reverse_proxy pwallet:80` (به‌جای 127.0.0.1:3080)
+(`reverse_proxy pwallet:80`)
 
-اگر Caddy روی host است ولی container پورت publish دارد، همان `pwall.dfmstock.com.caddy` با `127.0.0.1:3080` کافی است.
+### پیدا کردن نام شبکه دستی
+
+```bash
+docker inspect accounter_caddy --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+```
 
 ## 5. به‌روزرسانی
 
