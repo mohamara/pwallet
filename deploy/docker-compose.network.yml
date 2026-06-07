@@ -1,0 +1,22 @@
+# pwallet را به شبکه Docker مربوط به Caddy وصل می‌کند.
+#
+# 1) نام شبکه را پیدا کنید:
+#    docker inspect accounter_caddy --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+#
+# 2) اجرا:
+#    CADDY_NETWORK=accounter_default docker compose -f docker-compose.yml -f deploy/docker-compose.network.yml up -d --build
+#
+# 3) در Caddyfile:
+#    reverse_proxy pwallet:80
+
+services:
+  pwallet:
+    ports: []
+    networks:
+      - default
+      - caddy_net
+
+networks:
+  caddy_net:
+    external: true
+    name: ${CADDY_NETWORK:?CADDY_NETWORK is required}
