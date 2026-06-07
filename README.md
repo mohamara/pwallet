@@ -20,25 +20,13 @@ npm install
 npm run dev
 ```
 
-## Docker و استقرار (pwall.dfmstock.com)
-
-اپ **بدون Caddy جدا** dockerize شده تا با Caddy موجود سرور تداخل نداشته باشد.
+## Docker
 
 ```bash
 docker compose up -d --build
 ```
 
-- اپ روی `http://127.0.0.1:3080` (فقط localhost)
-- snippet Caddy: `deploy/caddy/pwall.dfmstock.com.caddy`
-- راهنمای کامل: [deploy/README.md](deploy/README.md)
-
-در Caddyfile اصلی سرور:
-
-```caddyfile
-import /path/to/pwallet/deploy/caddy/pwall.dfmstock.com.caddy
-```
-
-سپس: `sudo systemctl reload caddy`
+اپ روی `http://127.0.0.1:3080` اجرا می‌شود. جزئیات: [deploy/README.md](deploy/README.md)
 
 ## امنیت
 

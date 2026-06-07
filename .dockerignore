@@ -9,4 +9,3 @@ dist
 terminals
 Dockerfile
 docker-compose*.yml
-deploy/caddy/install.sh
