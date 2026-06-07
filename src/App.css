@@ -79,6 +79,31 @@
   color: var(--success);
 }
 
+.word-badge.optional {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.passphrase-wrap input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 2.5rem 0.875rem 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.passphrase-wrap input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ledger-hint {
+  margin-top: 0.5rem;
+  color: #fbbf24;
+}
+
 .textarea-wrap {
   position: relative;
 }

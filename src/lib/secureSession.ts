@@ -6,8 +6,8 @@ const AUTO_LOCK_MS = 15 * 60 * 1000
 let session: SecretAccount | null = null
 let lastActivityAt = 0
 
-export function unlockSession(mnemonic: string): PublicAccount {
-  session = deriveAccount(mnemonic, 0)
+export function unlockSession(mnemonic: string, passphrase = ''): PublicAccount {
+  session = deriveAccount(mnemonic, 0, passphrase)
   lastActivityAt = Date.now()
   return toPublicAccount(session)
 }

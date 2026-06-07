@@ -43,15 +43,56 @@ export function getWordCount(mnemonic: string): number {
   return words.length
 }
 
+export const VALID_MNEMONIC_LENGTHS = [12, 15, 18, 21, 24] as const
+
+export function isValidMnemonicLength(count: number): boolean {
+  return (VALID_MNEMONIC_LENGTHS as readonly number[]).includes(count)
+}
+
 export function isValidMnemonic(mnemonic: string): boolean {
   const normalized = normalizeMnemonic(mnemonic)
   const words = normalized.split(' ').filter(Boolean)
-  if (words.length !== 12 && words.length !== 24) return false
+  if (!isValidMnemonicLength(words.length)) return false
   return validateMnemonic(normalized, wordlist)
 }
 
-function derivePrivateKey(mnemonic: string, path: string): Uint8Array {
-  const seed = mnemonicToSeedSync(normalizeMnemonic(mnemonic))
+export interface ParsedMnemonic {
+  mnemonic: string
+  passphrase: string
+}
+
+/** 24 کلمه + passphrase جدا (Ledger) یا N+1 کلمه در یک فیلد */
+export function parseMnemonicInput(
+  input: string,
+  explicitPassphrase: string,
+): ParsedMnemonic | null {
+  const normalized = normalizeMnemonic(input)
+  const words = normalized.split(' ').filter(Boolean)
+  const pass = explicitPassphrase.trim()
+
+  if (pass) {
+    if (!isValidMnemonic(normalized)) return null
+    return { mnemonic: normalized, passphrase: pass }
+  }
+
+  for (const len of VALID_MNEMONIC_LENGTHS) {
+    if (words.length === len + 1) {
+      const mnemonic = words.slice(0, len).join(' ')
+      if (validateMnemonic(mnemonic, wordlist)) {
+        return { mnemonic, passphrase: words.slice(len).join(' ') }
+      }
+    }
+  }
+
+  if (isValidMnemonic(normalized)) {
+    return { mnemonic: normalized, passphrase: '' }
+  }
+
+  return null
+}
+
+function derivePrivateKey(mnemonic: string, path: string, passphrase: string): Uint8Array {
+  const seed = mnemonicToSeedSync(normalizeMnemonic(mnemonic), passphrase)
   const hdKey = HDKey.fromMasterSeed(seed)
   const child = hdKey.derive(path)
   if (!child.privateKey) {
@@ -60,9 +101,13 @@ function derivePrivateKey(mnemonic: string, path: string): Uint8Array {
   return child.privateKey
 }
 
-export function deriveAccount(mnemonic: string, index = 0): SecretAccount {
-  const evmKey = derivePrivateKey(mnemonic, `${EVM_PATH}/${index}`)
-  const tronKey = derivePrivateKey(mnemonic, `${TRON_PATH}/${index}`)
+export function deriveAccount(
+  mnemonic: string,
+  index = 0,
+  passphrase = '',
+): SecretAccount {
+  const evmKey = derivePrivateKey(mnemonic, `${EVM_PATH}/${index}`, passphrase)
+  const tronKey = derivePrivateKey(mnemonic, `${TRON_PATH}/${index}`, passphrase)
 
   const evmPrivateKey = '0x' + Buffer.from(evmKey).toString('hex')
   const evmWallet = new ethers.Wallet(evmPrivateKey)
