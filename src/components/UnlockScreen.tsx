@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import { assertSecureContext } from '../lib/secureSession'
-import { getWordCount, parseMnemonicInput } from '../lib/wallet'
+import {
+  canSubmitMnemonicInput,
+  formatMnemonicInputIssue,
+  getMnemonicInputIssue,
+  getSubmitBlockReason,
+  getWordCount,
+  parseMnemonicInput,
+} from '../lib/wallet'
 
 interface UnlockScreenProps {
   onUnlock: (mnemonic: string, passphrase?: string) => void
@@ -23,6 +30,21 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
     [mnemonic, passphrase],
   )
 
+  const canSubmit = useMemo(
+    () => canSubmitMnemonicInput(mnemonic, passphrase),
+    [mnemonic, passphrase],
+  )
+
+  const inputIssue = useMemo(() => {
+    if (!canSubmit) return null
+    return getMnemonicInputIssue(mnemonic, passphrase)
+  }, [canSubmit, mnemonic, passphrase])
+
+  const submitBlockReason = useMemo(
+    () => getSubmitBlockReason(mnemonic, passphrase),
+    [mnemonic, passphrase],
+  )
+
   const hasPassphraseHint =
     !passphrase.trim() && PASSPHRASE_HINT_COUNTS.includes(wordCount)
 
@@ -39,8 +61,11 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
 
     const result = parseMnemonicInput(mnemonic, passphrase)
     if (!result) {
+      const issue = getMnemonicInputIssue(mnemonic, passphrase)
       setError(
-        'عبارت بازیابی نامعتبر است. برای Ledger: ۲۴ کلمه + passphrase (کلمه ۲۵) در فیلد جدا.',
+        issue
+          ? formatMnemonicInputIssue(issue)
+          : 'عبارت بازیابی نامعتبر است. برای Ledger: ۲۴ کلمه + passphrase (کلمه ۲۵) در فیلد جدا.',
       )
       return
     }
@@ -104,6 +129,12 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
                 {showWords ? '🙈' : '👁'}
               </button>
             </div>
+            {submitBlockReason && (
+              <p className="hint validation-hint">{submitBlockReason}</p>
+            )}
+            {inputIssue && (
+              <p className="hint validation-hint">{formatMnemonicInputIssue(inputIssue)}</p>
+            )}
             {hasPassphraseHint && (
               <p className="hint ledger-hint">
                 به نظر می‌رسد ۲۵ کلمه وارد کرده‌اید — برای Ledger، ۲۴ کلمه را
@@ -148,7 +179,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
 
           {error && <p className="error">{error}</p>}
 
-          <button type="submit" className="btn-primary" disabled={!parsed}>
+          <button type="submit" className="btn-primary" disabled={!canSubmit}>
             باز کردن کیف پول
           </button>
         </form>

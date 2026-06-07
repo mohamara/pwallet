@@ -104,6 +104,11 @@
   color: #fbbf24;
 }
 
+.validation-hint {
+  margin-top: 0.5rem;
+  color: #f87171;
+}
+
 .textarea-wrap {
   position: relative;
 }
