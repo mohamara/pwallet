@@ -7,10 +7,39 @@ import { TronWeb } from 'tronweb'
 export const EVM_PATH = "m/44'/60'/0'/0"
 export const TRON_PATH = "m/44'/195'/0'/0"
 
+/** Ledger Live: account در سطح سوم (m/44'/coin'/account'/0/0) */
+export const LEDGER_EVM_PATH = "m/44'/60'"
+export const LEDGER_TRON_PATH = "m/44'/195'"
+
+export type DerivationProfile = 'ledger' | 'standard'
+
+export function resolveDerivationProfile(
+  mnemonic: string,
+  passphrase: string,
+): DerivationProfile {
+  if (passphrase.trim()) return 'ledger'
+  if (getWordCount(mnemonic) === 24) return 'ledger'
+  return 'standard'
+}
+
+export function buildDerivationPath(
+  profile: DerivationProfile,
+  chain: 'evm' | 'tron',
+  index: number,
+): string {
+  if (profile === 'ledger') {
+    const base = chain === 'evm' ? LEDGER_EVM_PATH : LEDGER_TRON_PATH
+    return `${base}/${index}'/0/0`
+  }
+  const base = chain === 'evm' ? EVM_PATH : TRON_PATH
+  return `${base}/${index}`
+}
+
 export interface PublicAccount {
   index: number
   evmAddress: string
   tronAddress: string
+  derivationProfile: DerivationProfile
 }
 
 export interface SecretAccount extends PublicAccount {
@@ -26,6 +55,7 @@ export function toPublicAccount(account: SecretAccount): PublicAccount {
     index: account.index,
     evmAddress: account.evmAddress,
     tronAddress: account.tronAddress,
+    derivationProfile: account.derivationProfile,
   }
 }
 
@@ -34,19 +64,21 @@ export function wipeSecretAccount(account: SecretAccount): void {
   account.tronPrivateKey = '\0'.repeat(Math.min(account.tronPrivateKey.length, 64))
 }
 
-function tokenizeMnemonicInput(input: string): string[] {
+function tokenizeMnemonicInputRaw(input: string): string[] {
   const text = input
     .replace(/^\uFEFF/, '')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .trim()
-    .toLowerCase()
-    // "1. word" یا "1) word" — شماره‌گذاری خط را حذف کن
-    .replace(/(?:^|[\s,،;|/\\]+)\d+[.)]\s*/g, ' ')
+    .replace(/(?:^|[\s,،;|/\\]+)\d+[.)]\s*/gi, ' ')
     .replace(/[,،;|/\\]+/g, ' ')
     .replace(/[\s\u00a0]+/g, ' ')
     .trim()
 
   return text.split(' ').filter(Boolean)
+}
+
+function tokenizeMnemonicInput(input: string): string[] {
+  return tokenizeMnemonicInputRaw(input).map((w) => w.toLowerCase())
 }
 
 export function normalizeMnemonic(input: string): string {
@@ -213,7 +245,9 @@ export function parseMnemonicInput(
     if (words.length === len + 1) {
       const mnemonic = words.slice(0, len).join(' ')
       if (validateMnemonic(mnemonic, wordlist)) {
-        return { mnemonic, passphrase: words.slice(len).join(' ') }
+        const rawWords = tokenizeMnemonicInputRaw(input)
+        const passphrase = rawWords.slice(len).join(' ')
+        return { mnemonic, passphrase }
       }
     }
   }
@@ -239,9 +273,13 @@ export function deriveAccount(
   mnemonic: string,
   index = 0,
   passphrase = '',
+  profile = resolveDerivationProfile(mnemonic, passphrase),
 ): SecretAccount {
-  const evmKey = derivePrivateKey(mnemonic, `${EVM_PATH}/${index}`, passphrase)
-  const tronKey = derivePrivateKey(mnemonic, `${TRON_PATH}/${index}`, passphrase)
+  const evmPath = buildDerivationPath(profile, 'evm', index)
+  const tronPath = buildDerivationPath(profile, 'tron', index)
+
+  const evmKey = derivePrivateKey(mnemonic, evmPath, passphrase)
+  const tronKey = derivePrivateKey(mnemonic, tronPath, passphrase)
 
   const evmPrivateKey = '0x' + Buffer.from(evmKey).toString('hex')
   const evmWallet = new ethers.Wallet(evmPrivateKey)
@@ -260,6 +298,7 @@ export function deriveAccount(
     evmPrivateKey,
     tronAddress,
     tronPrivateKey,
+    derivationProfile: profile,
   }
 }
 

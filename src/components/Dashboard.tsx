@@ -10,6 +10,7 @@ import {
   receiptToLocalTx,
 } from '../lib/transactions'
 import type { PublicAccount } from '../lib/wallet'
+import { buildDerivationPath } from '../lib/wallet'
 import { formatAutoLockMinutes } from '../hooks/useWalletSecurity'
 import { useTokenBalances, useTokens } from '../hooks/useTokens'
 import { useTransactionHistory } from '../hooks/useTransactionHistory'
@@ -54,6 +55,15 @@ export function Dashboard({
 
   const address =
     selectedChain.type === 'evm' ? account.evmAddress : account.tronAddress
+
+  const derivationPath =
+    account.derivationProfile === 'ledger'
+      ? buildDerivationPath(
+          'ledger',
+          selectedChain.type === 'evm' ? 'evm' : 'tron',
+          account.index,
+        )
+      : null
 
   const selectedToken = useMemo(() => {
     if (sendAsset.kind !== 'token') return null
@@ -160,6 +170,9 @@ export function Dashboard({
         <div className="brand">
           <span className="logo-mark small">P</span>
           <span>PWallet</span>
+          {account.derivationProfile === 'ledger' && (
+            <span className="profile-badge">Ledger Live</span>
+          )}
         </div>
         <button type="button" className="btn-ghost" onClick={onLock}>
           قفل کردن
@@ -230,6 +243,11 @@ export function Dashboard({
             <TokenList tokenBalances={tokenBalances} onRemove={removeToken} />
 
             <div className="info-card addresses-card">
+              {derivationPath && (
+                <p className="hint ledger-path-hint" dir="ltr">
+                  مسیر Ledger: {derivationPath}
+                </p>
+              )}
               <h3>آدرس EVM</h3>
               <p dir="ltr" className="mono">{account.evmAddress}</p>
               <CopyButton text={account.evmAddress} />
