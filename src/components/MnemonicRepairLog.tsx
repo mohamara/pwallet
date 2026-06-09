@@ -14,6 +14,7 @@ interface MnemonicRepairLogProps {
   onSelectCandidate?: (candidateId: string) => void
   showWords: boolean
   onToggleShowWords: () => void
+  hasTargetAddress?: boolean
 }
 
 function maskSensitiveText(text: string): string {
@@ -52,6 +53,7 @@ export function MnemonicRepairLog({
   onSelectCandidate,
   showWords,
   onToggleShowWords,
+  hasTargetAddress = false,
 }: MnemonicRepairLogProps) {
   const showAll = activeStepIndex === undefined
   const selectable = Boolean(onSelectCandidate) && analysis.candidates.length > 0
@@ -116,9 +118,14 @@ export function MnemonicRepairLog({
                 ? 'حالت‌های معتبر — یکی را انتخاب کنید'
                 : 'حالت‌های معتبر (برتر)'}
             </p>
-            {selectable && analysis.result && analysis.result.alternateCandidates > 1 && (
+            {selectable && analysis.result && analysis.result.alternateCandidates > 1 && !hasTargetAddress && (
               <p className="repair-candidates-hint">
                 اگر آدرس با Ledger یکی نبود، حالت دیگر را امتحان کنید.
+              </p>
+            )}
+            {hasTargetAddress && (
+              <p className="repair-candidates-hint address-match-hint">
+                فقط چینش‌هایی که با آدرس شما مطابقت دارند نمایش داده می‌شوند.
               </p>
             )}
             <ul>
@@ -148,6 +155,9 @@ export function MnemonicRepairLog({
                           {showWords ? detail : maskSensitiveText(detail)}
                         </span>
                         <span className="candidate-score">امتیاز {candidate.score}</span>
+                        {candidate.addressMatch && (
+                          <span className="candidate-badge address-match">✓ آدرس</span>
+                        )}
                         {isSelected && <span className="candidate-badge">انتخاب شد</span>}
                       </button>
                     </li>
@@ -169,6 +179,9 @@ export function MnemonicRepairLog({
                       {showWords ? detail : maskSensitiveText(detail)}
                     </span>
                     <span className="candidate-score">امتیاز {candidate.score}</span>
+                    {candidate.addressMatch && (
+                      <span className="candidate-badge address-match">✓ آدرس</span>
+                    )}
                     {isSelected && <span className="candidate-badge">انتخاب شد</span>}
                   </li>
                 )

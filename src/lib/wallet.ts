@@ -129,12 +129,20 @@ export interface RepairCheckStep {
   status: RepairCheckStatus
 }
 
+export type RepairTargetChain = 'evm' | 'tron'
+
+export interface RepairTargetAddress {
+  chain: RepairTargetChain
+  address: string
+}
+
 export interface RepairCandidateView {
   id: string
   swaps: MnemonicSwapFix[]
   score: number
   selected: boolean
   mnemonic: string
+  addressMatch?: boolean
 }
 
 export interface MnemonicRepairAnalysis {
@@ -189,8 +197,60 @@ const MAX_REPAIR_CANDIDATES = 8
 
 export interface AnalyzeMnemonicRepairOptions {
   allowDoubleSwap?: boolean
+  targetAddress?: RepairTargetAddress | null
   isCancelled?: () => boolean
   onUpdate?: (analysis: MnemonicRepairAnalysis) => void
+}
+
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
+const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
+const REPAIR_CHECK_PROFILES: DerivationProfile[] = ['standard', 'ledger']
+
+export function parseRepairTargetAddress(input: string): RepairTargetAddress | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+
+  if (EVM_ADDRESS_RE.test(trimmed)) {
+    try {
+      return { chain: 'evm', address: ethers.getAddress(trimmed) }
+    } catch {
+      return null
+    }
+  }
+
+  if (TRON_ADDRESS_RE.test(trimmed) && TronWeb.isAddress(trimmed)) {
+    return { chain: 'tron', address: trimmed }
+  }
+
+  return null
+}
+
+export function formatRepairTargetAddress(target: RepairTargetAddress): string {
+  return target.chain === 'evm' ? `EVM ${target.address}` : `TRON ${target.address}`
+}
+
+function compareRepairAddress(derived: string, target: RepairTargetAddress): boolean {
+  if (target.chain === 'evm') {
+    return derived.toLowerCase() === target.address.toLowerCase()
+  }
+  return derived === target.address
+}
+
+export function matchesRepairTargetAddress(
+  mnemonic: string,
+  passphrase: string,
+  target: RepairTargetAddress,
+): boolean {
+  for (const profile of REPAIR_CHECK_PROFILES) {
+    try {
+      const account = deriveAccount(mnemonic, 0, passphrase, profile)
+      const derived = target.chain === 'evm' ? account.evmAddress : account.tronAddress
+      if (compareRepairAddress(derived, target)) return true
+    } catch {
+      // try next profile
+    }
+  }
+  return false
 }
 
 function yieldToMain(): Promise<void> {
@@ -240,21 +300,24 @@ async function findSingleSwapFixesAsync(
 async function findBestDoubleSwapFixAsync(
   mnemonicWords: string[],
   options?: AnalyzeMnemonicRepairOptions,
+  passphrase = '',
 ): Promise<MnemonicSwapFix[] | null> {
   const n = mnemonicWords.length
+  const targetAddress = options?.targetAddress ?? null
   let best: { swaps: MnemonicSwapFix[]; score: number } | null = null
+  let addressMatch: MnemonicSwapFix[] | null = null
   let iterations = 0
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      if (isCancelled(options)) return best?.swaps ?? null
+      if (isCancelled(options)) return addressMatch ?? best?.swaps ?? null
 
       const once = swapWords(mnemonicWords, i, j)
       if (validateMnemonic(once.join(' '), wordlist)) continue
 
       for (let k = 0; k < n; k++) {
         for (let l = k + 1; l < n; l++) {
-          if (isCancelled(options)) return best?.swaps ?? null
+          if (isCancelled(options)) return addressMatch ?? best?.swaps ?? null
           if (i === k && j === l) continue
 
           iterations++
@@ -275,6 +338,15 @@ async function findBestDoubleSwapFixAsync(
               wordB: once[l]!,
             },
           ]
+
+          if (
+            targetAddress &&
+            filterDoubleFixesByTargetAddress(mnemonicWords, swaps, passphrase, targetAddress)
+          ) {
+            addressMatch = swaps
+            return addressMatch
+          }
+
           const gapScore = (fix: MnemonicSwapFix) => swapLikelihood(fix, mnemonicWords)
           const score = gapScore(swaps[0]!) + gapScore(swaps[1]!)
           if (!best || score > best.score) {
@@ -289,28 +361,61 @@ async function findBestDoubleSwapFixAsync(
     }
   }
 
-  return best?.swaps ?? null
+  return addressMatch ?? best?.swaps ?? null
 }
 
 function swapFixId(swaps: MnemonicSwapFix[]): string {
   return swaps.map((fix) => `${fix.indexA}:${fix.indexB}`).join('|')
 }
 
+function filterFixesByTargetAddress(
+  mnemonicWords: string[],
+  fixes: MnemonicSwapFix[],
+  passphrase: string,
+  targetAddress: RepairTargetAddress,
+): MnemonicSwapFix[] {
+  return fixes.filter((fix) => {
+    const mnemonic = applySwapFixes(mnemonicWords, [fix]).join(' ')
+    return matchesRepairTargetAddress(mnemonic, passphrase, targetAddress)
+  })
+}
+
+function filterDoubleFixesByTargetAddress(
+  mnemonicWords: string[],
+  swaps: MnemonicSwapFix[],
+  passphrase: string,
+  targetAddress: RepairTargetAddress,
+): boolean {
+  const mnemonic = applySwapFixes(mnemonicWords, swaps).join(' ')
+  return matchesRepairTargetAddress(mnemonic, passphrase, targetAddress)
+}
+
 function buildRepairCandidates(
   mnemonicWords: string[],
   ranked: Array<{ fix: MnemonicSwapFix; score: number }>,
   repairSwaps: MnemonicSwapFix[],
+  passphrase: string,
+  targetAddress?: RepairTargetAddress | null,
 ): RepairCandidateView[] {
   const selectedId = swapFixId(repairSwaps)
   const seen = new Set<string>()
   const candidates: RepairCandidateView[] = []
 
-  const pushCandidate = (swaps: MnemonicSwapFix[], score: number, selected: boolean) => {
+  const pushCandidate = (
+    swaps: MnemonicSwapFix[],
+    score: number,
+    selected: boolean,
+    addressMatch?: boolean,
+  ) => {
     const id = swapFixId(swaps)
     if (seen.has(id)) {
       if (selected) {
         const existing = candidates.find((candidate) => candidate.id === id)
         if (existing) existing.selected = true
+      }
+      if (addressMatch) {
+        const existing = candidates.find((candidate) => candidate.id === id)
+        if (existing) existing.addressMatch = true
       }
       return
     }
@@ -321,21 +426,41 @@ function buildRepairCandidates(
       score,
       selected,
       mnemonic: applySwapFixes(mnemonicWords, swaps).join(' '),
+      addressMatch,
     })
   }
 
-  for (const { fix, score } of ranked.slice(0, MAX_REPAIR_CANDIDATES)) {
-    pushCandidate([fix], score, selectedId === swapFixId([fix]))
+  const source =
+    targetAddress != null
+      ? ranked
+      : ranked.slice(0, MAX_REPAIR_CANDIDATES)
+
+  for (const { fix, score } of source) {
+    const mnemonic = applySwapFixes(mnemonicWords, [fix]).join(' ')
+    const addressMatch = targetAddress
+      ? matchesRepairTargetAddress(mnemonic, passphrase, targetAddress)
+      : undefined
+    if (targetAddress && !addressMatch) continue
+    pushCandidate([fix], score, selectedId === swapFixId([fix]), addressMatch)
   }
 
   if (repairSwaps.length === 2) {
     const score =
       swapLikelihood(repairSwaps[0]!, mnemonicWords) +
       swapLikelihood(repairSwaps[1]!, mnemonicWords)
-    pushCandidate(repairSwaps, score, true)
+    const mnemonic = applySwapFixes(mnemonicWords, repairSwaps).join(' ')
+    const addressMatch = targetAddress
+      ? matchesRepairTargetAddress(mnemonic, passphrase, targetAddress)
+      : undefined
+    if (!targetAddress || addressMatch) {
+      pushCandidate(repairSwaps, score, true, addressMatch)
+    }
   }
 
   candidates.sort((a, b) => {
+    if (targetAddress) {
+      if (a.addressMatch !== b.addressMatch) return a.addressMatch ? -1 : 1
+    }
     if (a.selected !== b.selected) return a.selected ? -1 : 1
     return b.score - a.score
   })
@@ -473,23 +598,62 @@ export async function analyzeMnemonicRepairAsync(
   )
 
   const ranked = rankSwapFixes(singleFixes, mnemonicWords)
-  const bestSingle = ranked[0]?.fix ?? null
+  const targetAddress = options.targetAddress ?? null
+  let addressMatchedFixes =
+    targetAddress != null
+      ? filterFixesByTargetAddress(mnemonicWords, singleFixes, passphrase, targetAddress)
+      : []
+  const rankedAddressMatches =
+    targetAddress != null ? rankSwapFixes(addressMatchedFixes, mnemonicWords) : []
+  const bestSingle = targetAddress
+    ? rankedAddressMatches[0]?.fix ?? null
+    : ranked[0]?.fix ?? null
 
   steps[steps.length - 1] = {
     id: 'single-scan',
     label: 'جستجوی جابجایی تک‌کلمه‌ای',
     detail:
       singleFixes.length > 0
-        ? `${totalPairs} جفت بررسی شد — ${singleFixes.length} حالت معتبر پیدا شد`
+        ? targetAddress
+          ? `${totalPairs} جفت بررسی شد — ${singleFixes.length} حالت معتبر، ${addressMatchedFixes.length} با آدرس شما`
+          : `${totalPairs} جفت بررسی شد — ${singleFixes.length} حالت معتبر پیدا شد`
         : `${totalPairs} جفت بررسی شد — هیچ حالت تک‌جابجایی معتبر نبود`,
-    status: singleFixes.length > 0 ? 'ok' : 'fail',
+    status:
+      singleFixes.length > 0
+        ? targetAddress && addressMatchedFixes.length === 0
+          ? 'fail'
+          : 'ok'
+        : 'fail',
   }
 
   let repairSwaps: MnemonicSwapFix[] | null = bestSingle ? [bestSingle] : null
-  let alternateCandidates = singleFixes.length
+  let alternateCandidates = targetAddress
+    ? addressMatchedFixes.length
+    : singleFixes.length
   let pairChecks = totalPairs
 
-  if (!repairSwaps && options.allowDoubleSwap) {
+  if (targetAddress && addressMatchedFixes.length === 0 && options.allowDoubleSwap) {
+    steps.push({
+      id: 'double-scan',
+      label: 'جستجوی دو جابجایی پشت‌سرهم',
+      detail: 'هیچ swap تکی با آدرس شما نبود — در حال جستجوی دو swap…',
+      status: 'running',
+    })
+    emitRepairUpdate({ steps: [...steps], result: null, candidates: [], pairChecks }, options)
+
+    repairSwaps = await findBestDoubleSwapFixAsync(mnemonicWords, options, passphrase)
+    alternateCandidates = repairSwaps ? 1 : 0
+    pairChecks += totalPairs * totalPairs
+
+    steps[steps.length - 1] = {
+      id: 'double-scan',
+      label: 'جستجوی دو جابجایی پشت‌سرهم',
+      detail: repairSwaps
+        ? 'ترکیب دو swap با آدرس شما پیدا شد'
+        : 'هیچ ترکیب swap با این آدرس پیدا نشد',
+      status: repairSwaps ? 'ok' : 'fail',
+    }
+  } else if (!repairSwaps && options.allowDoubleSwap) {
     steps.push({
       id: 'double-scan',
       label: 'جستجوی دو جابجایی پشت‌سرهم',
@@ -498,7 +662,7 @@ export async function analyzeMnemonicRepairAsync(
     })
     emitRepairUpdate({ steps: [...steps], result: null, candidates: [], pairChecks }, options)
 
-    repairSwaps = await findBestDoubleSwapFixAsync(mnemonicWords, options)
+    repairSwaps = await findBestDoubleSwapFixAsync(mnemonicWords, options, passphrase)
     alternateCandidates = repairSwaps ? 1 : 0
     pairChecks += totalPairs * totalPairs
 
@@ -519,6 +683,43 @@ export async function analyzeMnemonicRepairAsync(
     })
   }
 
+  if (targetAddress) {
+    const matchedMnemonic = repairSwaps
+      ? applySwapFixes(mnemonicWords, repairSwaps).join(' ')
+      : null
+    const addressOk =
+      matchedMnemonic != null &&
+      matchesRepairTargetAddress(matchedMnemonic, passphrase, targetAddress)
+
+    steps.push({
+      id: 'address-check',
+      label: 'تطبیق با آدرس شناخته‌شده',
+      detail: addressOk
+        ? `${formatRepairTargetAddress(targetAddress)} — ترتیب درست پیدا شد`
+        : repairSwaps
+          ? `${formatRepairTargetAddress(targetAddress)} — هیچ چینشی با این آدرس مطابقت نکرد`
+          : `${formatRepairTargetAddress(targetAddress)} — در انتظار اصلاح…`,
+      status: addressOk ? 'ok' : repairSwaps ? 'fail' : 'skip',
+    })
+
+    if (repairSwaps && !addressOk) {
+      const failed = {
+        steps,
+        result: null,
+        candidates: buildRepairCandidates(
+          mnemonicWords,
+          ranked,
+          repairSwaps,
+          passphrase,
+          targetAddress,
+        ),
+        pairChecks,
+      }
+      emitRepairUpdate(failed, options)
+      return failed
+    }
+  }
+
   if (!repairSwaps) {
     steps.push({
       id: 'rank',
@@ -533,16 +734,27 @@ export async function analyzeMnemonicRepairAsync(
     return failed
   }
 
-  const candidates = buildRepairCandidates(mnemonicWords, ranked, repairSwaps)
+  const candidates = buildRepairCandidates(
+    mnemonicWords,
+    targetAddress ? rankedAddressMatches : ranked,
+    repairSwaps,
+    passphrase,
+    targetAddress,
+  )
 
   steps.push({
     id: 'rank',
     label: 'رتبه‌بندی حالت‌های معتبر',
-    detail:
-      alternateCandidates > 1
+    detail: targetAddress
+      ? candidates.length > 1
+        ? `${candidates.length} چینش با آدرس شما — یکی را انتخاب کنید`
+        : candidates.length === 1
+          ? 'تنها یک چینش با آدرس شما'
+          : 'هیچ چینشی با آدرس شما پیدا نشد'
+      : alternateCandidates > 1
         ? `${alternateCandidates} حالت — یکی را از لیست پایین انتخاب کنید`
         : 'تنها یک حالت معتبر',
-    status: 'ok',
+    status: candidates.length > 0 || !targetAddress ? 'ok' : 'fail',
   })
 
   const result: MnemonicRepairResult = {
@@ -591,7 +803,12 @@ export function analyzeMnemonicRepair(
   return {
     steps: [],
     result,
-    candidates: buildRepairCandidates(resolved.mnemonicWords, ranked, repairSwaps),
+    candidates: buildRepairCandidates(
+      resolved.mnemonicWords,
+      ranked,
+      repairSwaps,
+      resolved.passphrase,
+    ),
     pairChecks: pairCount(resolved.mnemonicWords.length),
   }
 }
@@ -673,7 +890,7 @@ export function formatMnemonicSwapFix(fix: MnemonicSwapFix): string {
 export function formatMnemonicRepair(repair: MnemonicRepairResult): string {
   const swapText = repair.swaps.map(formatMnemonicSwapFix).join(' و ')
   if (repair.alternateCandidates > 1) {
-    return `${swapText} (از ${repair.alternateCandidates} حالت، محتمل‌ترین انتخاب شد — آدرس را با Ledger مقایسه کنید)`
+    return `${swapText} (از ${repair.alternateCandidates} حالت معتبر انتخاب شد)`
   }
   return swapText
 }

@@ -8,7 +8,9 @@ import {
   getMnemonicInputIssue,
   getSubmitBlockReason,
   getWordCount,
+  matchesRepairTargetAddress,
   parseMnemonicInput,
+  parseRepairTargetAddress,
   repairResultFromCandidate,
   type MnemonicRepairAnalysis,
   type RepairCandidateView,
@@ -45,6 +47,7 @@ function pickCandidate(
 export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps) {
   const [mnemonic, setMnemonic] = useState('')
   const [passphrase, setPassphrase] = useState('')
+  const [knownAddress, setKnownAddress] = useState('')
   const [showWords, setShowWords] = useState(false)
   const [showPassphrase, setShowPassphrase] = useState(false)
   const [error, setError] = useState('')
@@ -70,11 +73,14 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
   )
 
   const needsRepairPreview = canSubmit && inputIssue?.kind === 'invalid-checksum'
-  const { analysis: previewAnalysis, loading: previewLoading } = useDebouncedRepairAnalysis(
-    mnemonic,
-    passphrase,
-    needsRepairPreview,
-  )
+  const { analysis: previewAnalysis, loading: previewLoading, targetAddress } =
+    useDebouncedRepairAnalysis(mnemonic, passphrase, knownAddress, needsRepairPreview)
+
+  const knownAddressIssue = useMemo(() => {
+    const trimmed = knownAddress.trim()
+    if (!trimmed) return null
+    return parseRepairTargetAddress(trimmed) ? null : 'آدرس EVM (0x…) یا TRON (T…) نامعتبر است.'
+  }, [knownAddress])
 
   const repairAnalysis = checking ? submitAnalysis : previewAnalysis
   const repairLoading = checking || previewLoading
@@ -127,6 +133,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
 
     const analysis = await analyzeMnemonicRepairAsync(mnemonic, passphrase, {
       allowDoubleSwap: true,
+      targetAddress,
       onUpdate: (partial) => setSubmitAnalysis(partial),
     })
 
@@ -183,9 +190,16 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
       setError(
         issue
           ? formatMnemonicInputIssue(issue)
-          : 'عبارت بازیابی نامعتبر است. برای Ledger: ۲۴ کلمه + passphrase (کلمه ۲۵) در فیلد جدا.',
+          : targetAddress
+            ? 'هیچ چینش کلماتی با این آدرس پیدا نشد — passphrase یا آدرس را بررسی کنید.'
+            : 'عبارت بازیابی نامعتبر است. برای Ledger: ۲۴ کلمه + passphrase (کلمه ۲۵) در فیلد جدا.',
       )
       setSubmitAnalysis(null)
+      return
+    }
+
+    if (targetAddress && !matchesRepairTargetAddress(result.mnemonic, result.passphrase, targetAddress)) {
+      setError('آدرس استخراج‌شده با آدرس واردشده مطابقت ندارد.')
       return
     }
 
@@ -196,6 +210,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
     onUnlock(result.mnemonic, result.passphrase)
     setMnemonic('')
     setPassphrase('')
+    setKnownAddress('')
     setShowWords(false)
     setShowPassphrase(false)
     setSubmitAnalysis(null)
@@ -275,6 +290,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
                 onSelectCandidate={setSelectedCandidateId}
                 showWords={showWords}
                 onToggleShowWords={() => setShowWords((v) => !v)}
+                hasTargetAddress={targetAddress != null}
               />
             )}
             {inputIssue && inputIssue.kind !== 'invalid-checksum' && (
@@ -322,9 +338,41 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
             </p>
           </div>
 
+          <div className="input-group">
+            <label htmlFor="known-address">
+              آدرس شناخته‌شده
+              <span className="word-badge optional">اختیاری</span>
+            </label>
+            <input
+              id="known-address"
+              name="pwallet-known-address"
+              type="text"
+              value={knownAddress}
+              onChange={(e) => setKnownAddress(e.target.value)}
+              placeholder="0x… یا T…"
+              dir="ltr"
+              spellCheck={false}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+            />
+            <p className="hint">
+              اگر آدرس کیف پول را می‌دانید، وارد کنید تا بین چینش‌های معتبر، ترتیبی
+              انتخاب شود که همان آدرس را بسازد.
+            </p>
+            {knownAddressIssue && (
+              <p className="hint validation-hint">{knownAddressIssue}</p>
+            )}
+          </div>
+
           {error && <p className="error">{error}</p>}
 
-          <button type="submit" className="btn-primary" disabled={!canSubmit || checking}>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={!canSubmit || checking || Boolean(knownAddressIssue)}
+          >
             {checking ? 'در حال بررسی…' : 'باز کردن کیف پول'}
           </button>
         </form>

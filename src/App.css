@@ -94,6 +94,22 @@
   font-size: 0.95rem;
 }
 
+.input-group input[type='text']#known-address {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.input-group input[type='text']#known-address:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .passphrase-wrap input:focus {
   outline: none;
   border-color: var(--accent);
@@ -338,6 +354,14 @@
   font-size: 0.7rem;
   font-weight: 600;
   color: #34d399;
+}
+
+.candidate-badge.address-match {
+  color: var(--success);
+}
+
+.address-match-hint {
+  color: var(--success);
 }
 
 .textarea-wrap {
