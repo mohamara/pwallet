@@ -109,6 +109,237 @@
   color: #f87171;
 }
 
+.fix-hint {
+  margin-top: 0.5rem;
+  color: #34d399;
+}
+
+.repair-log {
+  margin-top: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.repair-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.repair-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.repair-toggle-visibility {
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  padding: 0.2rem 0.35rem;
+  opacity: 0.75;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.repair-toggle-visibility:hover {
+  opacity: 1;
+}
+
+.repair-step-detail.masked,
+.candidate-words.masked {
+  letter-spacing: 0.08em;
+}
+
+.repair-log-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.repair-log-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.repair-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.repair-step {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  font-size: 0.82rem;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.repair-step.active,
+.repair-step.status-ok,
+.repair-step.status-fail,
+.repair-step.status-running {
+  opacity: 1;
+}
+
+.repair-step-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.repair-step.status-ok .repair-step-icon {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+.repair-step.status-fail .repair-step-icon {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
+.repair-log.is-loading {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.repair-loading-hint {
+  margin-top: 0.5rem;
+  color: #fbbf24;
+}
+
+.repair-step.status-running .repair-step-icon,
+.repair-step.active .repair-step-icon {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.repair-step.status-skip .repair-step-icon {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.repair-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.repair-step-label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.repair-step-detail {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.repair-candidates {
+  margin-top: 0.875rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.repair-candidates-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.repair-candidates-hint {
+  margin: 0 0 0.625rem;
+  font-size: 0.76rem;
+  color: #fbbf24;
+  line-height: 1.45;
+}
+
+.repair-candidates ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.repair-candidates li {
+  margin: 0;
+}
+
+.repair-candidate-btn,
+.repair-candidates li:not(:has(.repair-candidate-btn)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  width: 100%;
+  padding: 0.45rem 0.625rem;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.repair-candidate-btn {
+  border: 1px solid transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.repair-candidate-btn:hover {
+  border-color: rgba(251, 191, 36, 0.25);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.repair-candidate-btn.selected,
+.repair-candidates li.selected {
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.candidate-rank {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.candidate-detail {
+  flex: 1 1 12rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.candidate-score {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.candidate-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #34d399;
+}
+
 .textarea-wrap {
   position: relative;
 }

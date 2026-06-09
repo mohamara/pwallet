@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { assertSecureContext } from '../lib/secureSession'
+import { useDebouncedRepairAnalysis } from '../hooks/useDebouncedRepairAnalysis'
 import {
+  analyzeMnemonicRepairAsync,
   canSubmitMnemonicInput,
   formatMnemonicInputIssue,
   getMnemonicInputIssue,
   getSubmitBlockReason,
   getWordCount,
   parseMnemonicInput,
+  repairResultFromCandidate,
+  type MnemonicRepairAnalysis,
+  type RepairCandidateView,
 } from '../lib/wallet'
+import { MnemonicRepairLog } from './MnemonicRepairLog'
 
 interface UnlockScreenProps {
   onUnlock: (mnemonic: string, passphrase?: string) => void
@@ -16,19 +22,37 @@ interface UnlockScreenProps {
 
 const PASSPHRASE_HINT_COUNTS = [13, 16, 19, 22, 25]
 
+function resolvePassphrase(
+  explicitPassphrase: string,
+  analysis: MnemonicRepairAnalysis | null,
+): string {
+  if (explicitPassphrase.trim()) return explicitPassphrase.trim()
+  return analysis?.result?.passphrase ?? ''
+}
+
+function pickCandidate(
+  candidates: RepairCandidateView[],
+  selectedCandidateId: string | null,
+): RepairCandidateView | null {
+  if (candidates.length === 0) return null
+  if (selectedCandidateId) {
+    const selected = candidates.find((candidate) => candidate.id === selectedCandidateId)
+    if (selected) return selected
+  }
+  return candidates.find((candidate) => candidate.selected) ?? candidates[0] ?? null
+}
+
 export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps) {
   const [mnemonic, setMnemonic] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [showWords, setShowWords] = useState(false)
   const [showPassphrase, setShowPassphrase] = useState(false)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [submitAnalysis, setSubmitAnalysis] = useState<MnemonicRepairAnalysis | null>(null)
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
 
   const wordCount = getWordCount(mnemonic)
-
-  const parsed = useMemo(
-    () => parseMnemonicInput(mnemonic, passphrase),
-    [mnemonic, passphrase],
-  )
 
   const canSubmit = useMemo(
     () => canSubmitMnemonicInput(mnemonic, passphrase),
@@ -45,10 +69,88 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
     [mnemonic, passphrase],
   )
 
+  const needsRepairPreview = canSubmit && inputIssue?.kind === 'invalid-checksum'
+  const { analysis: previewAnalysis, loading: previewLoading } = useDebouncedRepairAnalysis(
+    mnemonic,
+    passphrase,
+    needsRepairPreview,
+  )
+
+  const repairAnalysis = checking ? submitAnalysis : previewAnalysis
+  const repairLoading = checking || previewLoading
+
+  useEffect(() => {
+    const candidates = repairAnalysis?.candidates ?? []
+    if (candidates.length === 0) {
+      setSelectedCandidateId(null)
+      return
+    }
+
+    setSelectedCandidateId((previous) => {
+      if (previous && candidates.some((candidate) => candidate.id === previous)) {
+        return previous
+      }
+      const fallback = candidates.find((candidate) => candidate.selected) ?? candidates[0]
+      return fallback?.id ?? null
+    })
+  }, [repairAnalysis])
+
+  const selectedCandidate = useMemo(() => {
+    return pickCandidate(repairAnalysis?.candidates ?? [], selectedCandidateId)
+  }, [repairAnalysis, selectedCandidateId])
+
+  const parsed = useMemo(() => {
+    const direct = parseMnemonicInput(mnemonic, passphrase)
+    if (direct) return direct
+
+    if (selectedCandidate) {
+      return {
+        mnemonic: selectedCandidate.mnemonic,
+        passphrase: resolvePassphrase(passphrase, repairAnalysis),
+      }
+    }
+
+    const repaired = repairAnalysis?.result
+    if (repaired) {
+      return { mnemonic: repaired.mnemonic, passphrase: repaired.passphrase }
+    }
+
+    return null
+  }, [mnemonic, passphrase, selectedCandidate, repairAnalysis])
+
   const hasPassphraseHint =
     !passphrase.trim() && PASSPHRASE_HINT_COUNTS.includes(wordCount)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function runSubmitRepair(): Promise<MnemonicRepairAnalysis | null> {
+    setChecking(true)
+    setSubmitAnalysis(null)
+
+    const analysis = await analyzeMnemonicRepairAsync(mnemonic, passphrase, {
+      allowDoubleSwap: true,
+      onUpdate: (partial) => setSubmitAnalysis(partial),
+    })
+
+    setSubmitAnalysis(analysis)
+    setChecking(false)
+    return analysis
+  }
+
+  function repairFromAnalysis(analysis: MnemonicRepairAnalysis | null) {
+    if (!analysis) return null
+
+    const candidate = pickCandidate(analysis.candidates, selectedCandidateId)
+    if (candidate) {
+      return repairResultFromCandidate(
+        candidate,
+        resolvePassphrase(passphrase, analysis),
+        analysis.result?.alternateCandidates ?? analysis.candidates.length,
+      )
+    }
+
+    return analysis.result
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
 
@@ -59,7 +161,23 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
       return
     }
 
-    const result = parseMnemonicInput(mnemonic, passphrase)
+    let result = parseMnemonicInput(mnemonic, passphrase)
+    let needsRepair = false
+
+    if (!result && inputIssue?.kind === 'invalid-checksum') {
+      let analysis = submitAnalysis ?? previewAnalysis
+
+      if (!submitAnalysis) {
+        analysis = await runSubmitRepair()
+      }
+
+      const repair = repairFromAnalysis(analysis)
+      if (repair) {
+        result = { mnemonic: repair.mnemonic, passphrase: repair.passphrase }
+        needsRepair = true
+      }
+    }
+
     if (!result) {
       const issue = getMnemonicInputIssue(mnemonic, passphrase)
       setError(
@@ -67,7 +185,12 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
           ? formatMnemonicInputIssue(issue)
           : 'عبارت بازیابی نامعتبر است. برای Ledger: ۲۴ کلمه + passphrase (کلمه ۲۵) در فیلد جدا.',
       )
+      setSubmitAnalysis(null)
       return
+    }
+
+    if (needsRepair) {
+      setMnemonic(result.mnemonic)
     }
 
     onUnlock(result.mnemonic, result.passphrase)
@@ -75,6 +198,8 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
     setPassphrase('')
     setShowWords(false)
     setShowPassphrase(false)
+    setSubmitAnalysis(null)
+    setSelectedCandidateId(null)
   }
 
   return (
@@ -132,7 +257,27 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
             {submitBlockReason && (
               <p className="hint validation-hint">{submitBlockReason}</p>
             )}
-            {inputIssue && (
+            {needsRepairPreview && repairLoading && !repairAnalysis && (
+              <p className="hint repair-loading-hint">در انتظار توقف تایپ — بررسی سبک شروع می‌شود…</p>
+            )}
+            {repairAnalysis && (
+              <MnemonicRepairLog
+                analysis={repairAnalysis}
+                loading={repairLoading}
+                title={
+                  checking
+                    ? 'در حال بررسی عمیق…'
+                    : previewLoading
+                      ? 'در حال بررسی…'
+                      : 'پیش‌نمایش اصلاح خودکار'
+                }
+                selectedCandidateId={selectedCandidateId}
+                onSelectCandidate={setSelectedCandidateId}
+                showWords={showWords}
+                onToggleShowWords={() => setShowWords((v) => !v)}
+              />
+            )}
+            {inputIssue && inputIssue.kind !== 'invalid-checksum' && (
               <p className="hint validation-hint">{formatMnemonicInputIssue(inputIssue)}</p>
             )}
             {hasPassphraseHint && (
@@ -179,8 +324,8 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
 
           {error && <p className="error">{error}</p>}
 
-          <button type="submit" className="btn-primary" disabled={!canSubmit}>
-            باز کردن کیف پول
+          <button type="submit" className="btn-primary" disabled={!canSubmit || checking}>
+            {checking ? 'در حال بررسی…' : 'باز کردن کیف پول'}
           </button>
         </form>
 
