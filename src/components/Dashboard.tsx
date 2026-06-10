@@ -10,7 +10,7 @@ import {
   receiptToLocalTx,
 } from '../lib/transactions'
 import type { PublicAccount } from '../lib/wallet'
-import { buildDerivationPath } from '../lib/wallet'
+import { formatDerivationLayout, formatDerivationStandard } from '../lib/derivation'
 import { formatAutoLockMinutes } from '../hooks/useWalletSecurity'
 import { useTokenBalances, useTokens } from '../hooks/useTokens'
 import { useTransactionHistory } from '../hooks/useTransactionHistory'
@@ -56,14 +56,8 @@ export function Dashboard({
   const address =
     selectedChain.type === 'evm' ? account.evmAddress : account.tronAddress
 
-  const derivationPath =
-    account.derivationProfile === 'ledger'
-      ? buildDerivationPath(
-          'ledger',
-          selectedChain.type === 'evm' ? 'evm' : 'tron',
-          account.index,
-        )
-      : null
+  const activeDerivationPath =
+    selectedChain.type === 'evm' ? account.evmDerivationPath : account.tronDerivationPath
 
   const selectedToken = useMemo(() => {
     if (sendAsset.kind !== 'token') return null
@@ -173,6 +167,9 @@ export function Dashboard({
           {account.derivationProfile === 'ledger' && (
             <span className="profile-badge">Ledger Live</span>
           )}
+          <span className="profile-badge subtle">
+            {formatDerivationStandard(account.derivationConfig)}
+          </span>
         </div>
         <button type="button" className="btn-ghost" onClick={onLock}>
           قفل کردن
@@ -243,11 +240,19 @@ export function Dashboard({
             <TokenList tokenBalances={tokenBalances} onRemove={removeToken} />
 
             <div className="info-card addresses-card">
-              {derivationPath && (
-                <p className="hint ledger-path-hint" dir="ltr">
-                  مسیر Ledger: {derivationPath}
-                </p>
-              )}
+              <p className="hint derivation-path-hint" dir="ltr">
+                {formatDerivationStandard(account.derivationConfig)} ·{' '}
+                {formatDerivationLayout(account.derivationConfig)}
+              </p>
+              <p className="hint ledger-path-hint" dir="ltr">
+                EVM: {account.evmDerivationPath}
+              </p>
+              <p className="hint ledger-path-hint" dir="ltr">
+                TRON: {account.tronDerivationPath}
+              </p>
+              <p className="hint ledger-path-hint" dir="ltr">
+                فعال ({selectedChain.name}): {activeDerivationPath}
+              </p>
               <h3>آدرس EVM</h3>
               <p dir="ltr" className="mono">{account.evmAddress}</p>
               <CopyButton text={account.evmAddress} />

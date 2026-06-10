@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assertSecureContext } from '../lib/secureSession'
 import { useDebouncedRepairAnalysis } from '../hooks/useDebouncedRepairAnalysis'
 import {
@@ -12,13 +12,16 @@ import {
   parseMnemonicInput,
   parseRepairTargetAddress,
   repairResultFromCandidate,
+  resolveDefaultDerivationConfig,
   type MnemonicRepairAnalysis,
   type RepairCandidateView,
 } from '../lib/wallet'
+import type { DerivationConfig } from '../lib/derivation'
+import { DerivationPathSelector, isDerivationConfigValid } from './DerivationPathSelector'
 import { MnemonicRepairLog } from './MnemonicRepairLog'
 
 interface UnlockScreenProps {
-  onUnlock: (mnemonic: string, passphrase?: string) => void
+  onUnlock: (mnemonic: string, passphrase?: string, derivationConfig?: DerivationConfig) => void
   secureContextError?: string | null
 }
 
@@ -54,8 +57,19 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
   const [checking, setChecking] = useState(false)
   const [submitAnalysis, setSubmitAnalysis] = useState<MnemonicRepairAnalysis | null>(null)
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
+  const [derivationConfig, setDerivationConfig] = useState<DerivationConfig>(() =>
+    resolveDefaultDerivationConfig(0, false),
+  )
+  const derivationTouchedRef = useRef(false)
 
   const wordCount = getWordCount(mnemonic)
+
+  useEffect(() => {
+    if (derivationTouchedRef.current) return
+    setDerivationConfig(
+      resolveDefaultDerivationConfig(wordCount, Boolean(passphrase.trim())),
+    )
+  }, [wordCount, passphrase])
 
   const canSubmit = useMemo(
     () => canSubmitMnemonicInput(mnemonic, passphrase),
@@ -130,6 +144,13 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
   const passphraseHasEdgeWhitespace =
     passphrase.trim().length > 0 && passphrase !== passphrase.trim()
 
+  const derivationValid = isDerivationConfigValid(derivationConfig)
+
+  function handleDerivationChange(next: DerivationConfig) {
+    derivationTouchedRef.current = true
+    setDerivationConfig(next)
+  }
+
   async function runSubmitRepair(): Promise<MnemonicRepairAnalysis | null> {
     setChecking(true)
     setSubmitAnalysis(null)
@@ -201,8 +222,13 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
       return
     }
 
-    if (targetAddress && !matchesRepairTargetAddress(result.mnemonic, result.passphrase, targetAddress)) {
-      setError('آدرس استخراج‌شده با آدرس واردشده مطابقت ندارد.')
+    if (targetAddress && !matchesRepairTargetAddress(
+      result.mnemonic,
+      result.passphrase,
+      targetAddress,
+      derivationConfig,
+    )) {
+      setError('آدرس استخراج‌شده با آدرس واردشده مطابقت ندارد — derivation path را بررسی کنید.')
       return
     }
 
@@ -210,7 +236,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
       setMnemonic(result.mnemonic)
     }
 
-    onUnlock(result.mnemonic, result.passphrase)
+    onUnlock(result.mnemonic, result.passphrase, derivationConfig)
     setMnemonic('')
     setPassphrase('')
     setKnownAddress('')
@@ -218,6 +244,8 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
     setShowPassphrase(false)
     setSubmitAnalysis(null)
     setSelectedCandidateId(null)
+    derivationTouchedRef.current = false
+    setDerivationConfig(resolveDefaultDerivationConfig(0, false))
   }
 
   return (
@@ -347,6 +375,12 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
             )}
           </div>
 
+          <DerivationPathSelector
+            config={derivationConfig}
+            onChange={handleDerivationChange}
+            disabled={checking}
+          />
+
           <div className="input-group">
             <label htmlFor="known-address">
               آدرس شناخته‌شده
@@ -380,7 +414,7 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
           <button
             type="submit"
             className="btn-primary"
-            disabled={!canSubmit || checking || Boolean(knownAddressIssue)}
+            disabled={!canSubmit || checking || Boolean(knownAddressIssue) || !derivationValid}
           >
             {checking ? 'در حال بررسی…' : 'باز کردن کیف پول'}
           </button>

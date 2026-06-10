@@ -3,6 +3,33 @@ import { mnemonicToSeedSync, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { ethers } from 'ethers'
 import { TronWeb } from 'tronweb'
+import {
+  buildDerivationPathFromConfig,
+  normalizeDerivationConfig,
+  repairDerivationCandidates,
+  resolveDefaultDerivationConfig,
+  type DerivationConfig,
+  type DerivationLayout,
+} from './derivation'
+
+export type {
+  DerivationConfig,
+  DerivationLayout,
+  DerivationStandard,
+} from './derivation'
+export {
+  DERIVATION_STANDARDS,
+  STANDARD_META,
+  buildDerivationPathFromConfig,
+  commonRepairDerivationConfigs,
+  formatDerivationLayout,
+  formatDerivationStandard,
+  isValidDerivationPath,
+  normalizeDerivationConfig,
+  repairDerivationCandidates,
+  resolveDefaultDerivationConfig,
+  validateDerivationConfig,
+} from './derivation'
 
 export const EVM_PATH = "m/44'/60'/0'/0"
 export const TRON_PATH = "m/44'/195'/0'/0"
@@ -11,35 +38,46 @@ export const TRON_PATH = "m/44'/195'/0'/0"
 export const LEDGER_EVM_PATH = "m/44'/60'"
 export const LEDGER_TRON_PATH = "m/44'/195'"
 
-export type DerivationProfile = 'ledger' | 'standard'
+/** @deprecated از DerivationConfig.layout استفاده کنید */
+export type DerivationProfile = DerivationLayout
 
+/** @deprecated از resolveDefaultDerivationConfig استفاده کنید */
 export function resolveDerivationProfile(
   mnemonic: string,
   passphrase: string,
 ): DerivationProfile {
-  if (passphrase.trim()) return 'ledger'
-  if (getWordCount(mnemonic) === 24) return 'ledger'
-  return 'standard'
+  return resolveDefaultDerivationConfig(getWordCount(mnemonic), Boolean(passphrase.trim()))
+    .layout
 }
 
+/** @deprecated از buildDerivationPathFromConfig استفاده کنید */
 export function buildDerivationPath(
   profile: DerivationProfile,
   chain: 'evm' | 'tron',
   index: number,
 ): string {
-  if (profile === 'ledger') {
-    const base = chain === 'evm' ? LEDGER_EVM_PATH : LEDGER_TRON_PATH
-    return `${base}/${index}'/0/0`
-  }
-  const base = chain === 'evm' ? EVM_PATH : TRON_PATH
-  return `${base}/${index}`
+  return buildDerivationPathFromConfig(
+    normalizeDerivationConfig({
+      standard: 'bip44',
+      layout: profile,
+      accountIndex: profile === 'ledger' ? index : 0,
+      changeIndex: 0,
+      addressIndex: profile === 'ledger' ? 0 : index,
+    }),
+    chain,
+  )
 }
 
 export interface PublicAccount {
-  index: number
   evmAddress: string
   tronAddress: string
+  derivationConfig: DerivationConfig
+  evmDerivationPath: string
+  tronDerivationPath: string
+  /** @deprecated از derivationConfig.layout استفاده کنید */
   derivationProfile: DerivationProfile
+  /** @deprecated از derivationConfig.accountIndex / addressIndex استفاده کنید */
+  index: number
 }
 
 export interface SecretAccount extends PublicAccount {
@@ -52,10 +90,16 @@ export type DerivedAccount = SecretAccount
 
 export function toPublicAccount(account: SecretAccount): PublicAccount {
   return {
-    index: account.index,
     evmAddress: account.evmAddress,
     tronAddress: account.tronAddress,
-    derivationProfile: account.derivationProfile,
+    derivationConfig: account.derivationConfig,
+    evmDerivationPath: account.evmDerivationPath,
+    tronDerivationPath: account.tronDerivationPath,
+    derivationProfile: account.derivationConfig.layout,
+    index:
+      account.derivationConfig.layout === 'ledger'
+        ? account.derivationConfig.accountIndex
+        : account.derivationConfig.addressIndex,
   }
 }
 
@@ -204,7 +248,6 @@ export interface AnalyzeMnemonicRepairOptions {
 
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
-const REPAIR_CHECK_PROFILES: DerivationProfile[] = ['standard', 'ledger']
 
 export function parseRepairTargetAddress(input: string): RepairTargetAddress | null {
   const trimmed = input.trim()
@@ -240,14 +283,18 @@ export function matchesRepairTargetAddress(
   mnemonic: string,
   passphrase: string,
   target: RepairTargetAddress,
+  derivationConfig = resolveDefaultDerivationConfig(
+    getWordCount(mnemonic),
+    Boolean(passphrase.trim()),
+  ),
 ): boolean {
-  for (const profile of REPAIR_CHECK_PROFILES) {
+  for (const config of repairDerivationCandidates(derivationConfig)) {
     try {
-      const account = deriveAccount(mnemonic, 0, passphrase, profile)
+      const account = deriveAccount(mnemonic, passphrase, config)
       const derived = target.chain === 'evm' ? account.evmAddress : account.tronAddress
       if (compareRepairAddress(derived, target)) return true
     } catch {
-      // try next profile
+      // try next config
     }
   }
   return false
@@ -1061,12 +1108,15 @@ function derivePrivateKey(mnemonic: string, path: string, passphrase: string): U
 
 export function deriveAccount(
   mnemonic: string,
-  index = 0,
   passphrase = '',
-  profile = resolveDerivationProfile(mnemonic, passphrase),
+  derivationConfig = resolveDefaultDerivationConfig(
+    getWordCount(mnemonic),
+    Boolean(passphrase.trim()),
+  ),
 ): SecretAccount {
-  const evmPath = buildDerivationPath(profile, 'evm', index)
-  const tronPath = buildDerivationPath(profile, 'tron', index)
+  const config = normalizeDerivationConfig(derivationConfig)
+  const evmPath = buildDerivationPathFromConfig(config, 'evm')
+  const tronPath = buildDerivationPathFromConfig(config, 'tron')
 
   const evmKey = derivePrivateKey(mnemonic, evmPath, passphrase)
   const tronKey = derivePrivateKey(mnemonic, tronPath, passphrase)
@@ -1083,12 +1133,15 @@ export function deriveAccount(
   }
 
   return {
-    index,
     evmAddress: evmWallet.address,
     evmPrivateKey,
     tronAddress,
     tronPrivateKey,
-    derivationProfile: profile,
+    derivationConfig: config,
+    evmDerivationPath: evmPath,
+    tronDerivationPath: tronPath,
+    derivationProfile: config.layout,
+    index: config.layout === 'ledger' ? config.accountIndex : config.addressIndex,
   }
 }
 

@@ -13,12 +13,13 @@ import {
   lockSession,
   unlockSession,
 } from '../lib/secureSession'
+import type { DerivationConfig } from '../lib/derivation'
 import type { PublicAccount } from '../lib/wallet'
 
 interface WalletContextValue {
   account: PublicAccount | null
   selectedChain: ChainConfig
-  unlock: (mnemonic: string, passphrase?: string) => void
+  unlock: (mnemonic: string, passphrase?: string, derivationConfig?: DerivationConfig) => void
   lock: () => void
   setSelectedChain: (chain: ChainConfig) => void
   autoLockMessage: string | null
@@ -33,12 +34,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [selectedChain, setSelectedChain] = useState<ChainConfig>(CHAINS[0])
   const [autoLockMessage, setAutoLockMessage] = useState<string | null>(null)
 
-  const unlock = useCallback((phrase: string, passphrase = '') => {
-    assertSecureContext()
-    const publicAccount = unlockSession(phrase, passphrase)
-    setAccount(publicAccount)
-    setAutoLockMessage(null)
-  }, [])
+  const unlock = useCallback(
+    (phrase: string, passphrase = '', derivationConfig?: DerivationConfig) => {
+      assertSecureContext()
+      const publicAccount = unlockSession(phrase, passphrase, derivationConfig)
+      setAccount(publicAccount)
+      setAutoLockMessage(null)
+    },
+    [],
+  )
 
   const lock = useCallback(() => {
     lockSession()
