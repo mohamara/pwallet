@@ -851,7 +851,7 @@ function resolveMnemonicWords(
   if (pass) {
     if (!isValidMnemonicLength(words.length)) return null
     if (findInvalidWord(words, true) >= 0) return null
-    return { mnemonicWords: words, passphrase: pass }
+    return { mnemonicWords: words, passphrase: explicitPassphrase }
   }
 
   for (const len of VALID_MNEMONIC_LENGTHS) {
@@ -1027,7 +1027,8 @@ export function parseMnemonicInput(
 
   if (pass) {
     if (!isValidMnemonic(normalized)) return null
-    return { mnemonic: normalized, passphrase: pass }
+    // passphrase باید عیناً استفاده شود — در BIP39 حتی فاصله ابتدا/انتها seed را عوض می‌کند
+    return { mnemonic: normalized, passphrase: explicitPassphrase }
   }
 
   for (const len of VALID_MNEMONIC_LENGTHS) {

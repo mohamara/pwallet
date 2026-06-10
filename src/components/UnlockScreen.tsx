@@ -28,7 +28,7 @@ function resolvePassphrase(
   explicitPassphrase: string,
   analysis: MnemonicRepairAnalysis | null,
 ): string {
-  if (explicitPassphrase.trim()) return explicitPassphrase.trim()
+  if (explicitPassphrase.trim()) return explicitPassphrase
   return analysis?.result?.passphrase ?? ''
 }
 
@@ -126,6 +126,9 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
 
   const hasPassphraseHint =
     !passphrase.trim() && PASSPHRASE_HINT_COUNTS.includes(wordCount)
+
+  const passphraseHasEdgeWhitespace =
+    passphrase.trim().length > 0 && passphrase !== passphrase.trim()
 
   async function runSubmitRepair(): Promise<MnemonicRepairAnalysis | null> {
     setChecking(true)
@@ -336,6 +339,12 @@ export function UnlockScreen({ onUnlock, secureContextError }: UnlockScreenProps
             <p className="hint">
               passphrase روی Ledger کیف پول جدا می‌سازد — حروف بزرگ/کوچک مهم است.
             </p>
+            {passphraseHasEdgeWhitespace && (
+              <p className="hint validation-hint">
+                passphrase با فاصله شروع یا تمام می‌شود — همان‌طور که هست استفاده
+                خواهد شد. اگر فاصله عمدی نیست، آن را حذف کنید.
+              </p>
+            )}
           </div>
 
           <div className="input-group">
